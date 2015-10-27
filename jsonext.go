@@ -43,11 +43,9 @@ func (d *Decoder) Decode(v interface{}) error {
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return &json.InvalidUnmarshalError{reflect.TypeOf(v)}
 	}
-
 	if rv.Elem().Kind() == reflect.Struct {
 		return d.decodeStruct(rv)
 	}
-
 	return d.Decoder.Decode(v)
 }
 
@@ -58,6 +56,23 @@ func (d *Decoder) decodeStruct(rv reflect.Value) error {
 		return err
 	}
 	return d.descendStruct(rv.Elem(), data)
+}
+
+func (d *Decoder) descendSlice(rv reflect.Value, data []interface{}) error {
+	if data == nil {
+		return nil
+	}
+	t := rv.Type().Elem()
+	sliceValue := reflect.MakeSlice(reflect.SliceOf(t), len(data), len(data))
+	for i := 0; i < len(data); i++ {
+		err := d.descendStruct(sliceValue.Index(i), data[i].(map[string]interface{}))
+		if err != nil {
+			return err
+		}
+	}
+	rv.Set(sliceValue)
+
+	return nil
 }
 
 func (d *Decoder) descendStruct(rv reflect.Value, data map[string]interface{}) error {
@@ -74,8 +89,9 @@ func (d *Decoder) descendStruct(rv reflect.Value, data map[string]interface{}) e
 		tag := field.Tag.Get("jsonext")
 		switch tag {
 		case "descend":
-			if field.Type.Kind() != reflect.Struct {
-				return fmt.Errorf("Cannot descend into field %s, because it is not a struct", field.Name)
+
+			if field.Type.Kind() != reflect.Struct && field.Type.Kind() != reflect.Slice {
+				return fmt.Errorf("Cannot descend into field %s, because it is not a struct or Slice", field.Name)
 			}
 			if jsonFieldname == "" || jsonFieldname == "-" {
 				break
@@ -84,10 +100,21 @@ func (d *Decoder) descendStruct(rv reflect.Value, data map[string]interface{}) e
 			if subData == nil {
 				break
 			}
-			err := d.descendStruct(fieldv, subData.(map[string]interface{}))
-			if err != nil {
-				return err
+
+			if field.Type.Kind() == reflect.Struct {
+				err := d.descendStruct(fieldv, subData.(map[string]interface{}))
+				if err != nil {
+					return err
+				}
 			}
+
+			if field.Type.Kind() == reflect.Slice {
+				err := d.descendSlice(fieldv, subData.([]interface{}))
+				if err != nil {
+					return err
+				}
+			}
+
 			delete(data, jsonFieldname)
 		case "catchall":
 			if field.Type != catchAllType {
