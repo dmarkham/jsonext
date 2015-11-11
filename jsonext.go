@@ -131,10 +131,11 @@ func (d *Decoder) descendStruct(rv reflect.Value, data map[string]interface{}) e
 			return fmt.Errorf("Unknown tag %s on field %s", tag, field.Name)
 		}
 	}
-
 	// Data now contains only the fields which could not be
 	// mapped onto struct fields.
-	rca.Set(reflect.ValueOf(data))
+	if rca.CanSet() {
+		rca.Set(reflect.ValueOf(data))
+	}
 
 	return nil
 }
